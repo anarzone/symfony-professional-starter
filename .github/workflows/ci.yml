@@ -1,0 +1,105 @@
+name: FastReserve CI
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches: [ "main" ]
+
+permissions:
+    contents: write # Required to create tags and releases
+    issues: write
+    pull-requests: write
+
+jobs:
+    quality:
+        name: Code Quality Checks
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout code
+                uses: actions/checkout@v4
+
+            -   name: Setup PHP
+                uses: shivammathur/setup-php@v2
+                with:
+                    php-version: '8.4'
+                    tools: composer:v2
+                    coverage: none
+
+            -   name: Install Dependencies
+                run: composer install --no-progress --prefer-dist
+
+            -   name: Check Code Style
+                run: composer check-style
+
+            -   name: Run Static Analysis
+                run: vendor/bin/phpstan analyse src --memory-limit=1G
+
+    tests:
+        needs: quality
+        runs-on: ubuntu-latest
+
+        services:
+            mysql:
+                image: mysql:8.0
+                env:
+                    MYSQL_ROOT_PASSWORD: root
+                    MYSQL_DATABASE: fast_reserve_test
+                ports:
+                    - 3306:3306
+                options: >-
+                    --health-cmd="mysqladmin ping --silent"
+                    --health-interval=10s
+                    --health-timeout=5s
+                    --health-retries=3
+
+        steps:
+            -   name: Checkout code
+                uses: actions/checkout@v4
+
+            -   name: Setup PHP
+                uses: shivammathur/setup-php@v2
+                with:
+                    php-version: '8.4'
+                    extensions: pdo, pdo_mysql
+
+            -   name: Install Dependencies
+                run: composer install --no-progress --prefer-dist
+
+            -   name: Create Database Schema
+                env:
+                    DATABASE_URL: mysql://root:root@127.0.0.1:3306/fast_reserve
+                run: |
+                    php bin/console doctrine:schema:create --env=test
+
+            -   name: Run  Tests
+                env:
+                    DATABASE_URL: mysql://root:root@127.0.0.1:3306/fast_reserve
+                run: vendor/bin/phpunit
+
+    release:
+        name: Automate Versioning
+        needs: [quality, tests]
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Checkout Code
+                uses: actions/checkout@v4
+                with:
+                    fetch-depth: 0 # Important: Fetch all history for history analysis
+
+            -   name: Setup Node.js
+                uses: actions/setup-node@v4
+                with:
+                    node-version: "lts/*"
+
+            -   name: Run Semantic Release
+                uses: cycjimmy/semantic-release-action@v4
+                env:
+                    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                with:
+                    extra_plugins: |
+                        @semantic-release/changelog
+                        @semantic-release/git
+                        conventional-changelog-conventionalcommits
