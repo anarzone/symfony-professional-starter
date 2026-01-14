@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/anarzone/symfony-professional-starter/compare/v1.0.0...v1.1.0) (2026-01-14)
+
+### Features
+
+* Add comprehensive project documentation and developer workflows ([91dd348](https://github.com/anarzone/symfony-professional-starter/commit/91dd34868a023b8222c15a086e2249d4bc8adb1a))
+
 ## 1.0.0 (2026-01-14)
 
 ### Features
