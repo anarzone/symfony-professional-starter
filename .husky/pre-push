@@ -1,0 +1,181 @@
+#!/bin/bash
+
+# Pre-push hook for UptimeSentinel
+# Runs senior-code-reviewer agent on all files before pushing
+
+# Don't exit on error - we want to handle errors gracefully
+# set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration
+CONFIG_FILE="$(git rev-parse --show-toplevel)/.husky/pre-push-config.yml"
+AUTO_REVIEW=true
+MAX_FILES=20
+
+# Load configuration if exists
+if [ -f "$CONFIG_FILE" ]; then
+    # Check for auto_review setting (more robust YAML parsing)
+    if grep -E "^auto_review:\s*false" "$CONFIG_FILE" 2>/dev/null; then
+        AUTO_REVIEW=false
+    fi
+    MAX_FILES=$(grep -E "^max_files:\s*[0-9]+" "$CONFIG_FILE" 2>/dev/null | awk '{print $2}' || echo 20)
+fi
+
+echo -e "${BLUE}🤖 Running pre-push code review...${NC}"
+echo ""
+
+# Get the current and remote refs
+read local_ref local_sha1 remote_ref remote_sha1
+
+# Get list of all changed files in this push (including additions, modifications, and deletions)
+if [ -z "$remote_sha1" ] || [ "$remote_sha1" = "0000000000000000000000000000000000000000" ]; then
+    # New branch or no remote - compare against main
+    CHANGED_FILES=$(git diff --name-only --diff-filter=AMD "$(git merge-base $local_sha1 main 2>/dev/null || echo main)" $local_sha1 2>/dev/null || git diff --name-only --diff-filter=AMD $local_sha1)
+else
+    # Existing branch - check if remote_sha1 exists locally
+    if git cat-file -e $remote_sha1 2>/dev/null; then
+        # Remote SHA exists locally - use it
+        CHANGED_FILES=$(git diff --name-only --diff-filter=AMD ${remote_sha1}..${local_sha1})
+    else
+        # Remote SHA doesn't exist locally - fetch and retry, or use remote branch
+        echo -e "${YELLOW}⚠️  Remote has new commits - fetching...${NC}"
+        git fetch origin $remote_ref 2>/dev/null || true
+
+        # Try to get the merge base with the remote tracking branch
+        MERGE_BASE=$(git merge-base $local_sha1 origin/${remote_ref#refs/heads/} 2>/dev/null)
+
+        if [ -n "$MERGE_BASE" ]; then
+            CHANGED_FILES=$(git diff --name-only --diff-filter=AMD ${MERGE_BASE}..${local_sha1})
+        else
+            # Fallback: compare against origin/main
+            CHANGED_FILES=$(git diff --name-only --diff-filter=AMD origin/main ${local_sha1} 2>/dev/null || git diff --name-only --diff-filter=AMD $local_sha1)
+        fi
+    fi
+fi
+
+# Count all changed files
+FILE_COUNT=0
+if [ -n "$CHANGED_FILES" ]; then
+    FILE_COUNT=$(echo "$CHANGED_FILES" | grep -v -e '^[[:space:]]*$' | wc -l | tr -d '[:space:]')
+fi
+
+# Check if auto-review is enabled
+if [ "$AUTO_REVIEW" = false ]; then
+    echo -e "${YELLOW}⏭️  Automatic code review disabled (skipping)${NC}"
+    echo -e "${YELLOW}   Pre-commit hook already ran composer checks ✅${NC}"
+    exit 0
+fi
+
+if [ "$FILE_COUNT" -eq 0 ]; then
+    echo -e "${GREEN}✅ No files changed - skipping code review${NC}"
+    exit 0
+fi
+
+if [ "$FILE_COUNT" -gt "$MAX_FILES" ]; then
+    echo -e "${YELLOW}⚠️  $FILE_COUNT files changed (max: $MAX_FILES) - skipping automatic review${NC}"
+    echo -e "${YELLOW}   Large changes should be reviewed via PR workflow instead${NC}"
+    exit 0
+fi
+
+echo -e "${BLUE}📝 Reviewing $FILE_COUNT file(s):${NC}"
+echo "$CHANGED_FILES" | while read -r file; do
+    [ -n "$file" ] && echo -e "${BLUE}   - $file${NC}"
+done
+echo ""
+
+# Create temp file for review output
+REVIEW_OUTPUT=$(mktemp)
+trap "rm -f $REVIEW_OUTPUT" EXIT
+
+# Run the review using Claude Code CLI
+echo -e "${BLUE}🤖 Calling Claude Code senior-code-reviewer agent...${NC}"
+
+# Check if claude CLI is available
+if ! command -v claude &> /dev/null; then
+    echo -e "${RED}❌ claude CLI not found${NC}"
+    echo -e "${RED}   Automatic review requires the Claude CLI to be installed${NC}"
+    echo ""
+    echo -e "${YELLOW}💡 Install from: https://code.claude.com${NC}"
+    echo -e "${YELLOW}   Or disable auto_review in .husky/pre-push-config.yml${NC}"
+    echo ""
+    echo -e "${YELLOW}💡 To bypass this check: git push --no-verify${NC}"
+    exit 1
+fi
+
+if claude ask > "$REVIEW_OUTPUT" 2>&1 <<EOF
+You are a senior code reviewer. Review these files that are about to be pushed:
+
+$(echo "$CHANGED_FILES" | while read -r file; do
+    [ -n "$file" ] && echo "- $file"
+done)
+
+**Review Scope**: Review ALL files comprehensively:
+- **PHP Files**: DDD violations, code quality, security, performance, testing
+- **YAML Files**: Configuration correctness, syntax, best practices
+- **Markdown/Docs**: Clarity, completeness, accuracy
+- **Design System**: Consistency, proper patterns, accessibility
+- **CI/CD Files**: Workflow correctness, security, best practices
+- **Config Files**: Proper settings, no secrets, environment-specific checks
+
+Focus on:
+1. **Critical Issues**: Security vulnerabilities, breaking changes, obvious bugs
+2. **Architecture**: DDD violations, design patterns, scalability
+3. **Code Quality**: Standards violations per CLAUDE.md, maintainability
+4. **Configuration**: YAML syntax, environment variables, secrets detection
+5. **Documentation**: Completeness, clarity, accuracy
+6. **Testing**: Missing tests for critical paths
+
+**Important**:
+- If you find CRITICAL issues (must-fix), start your response with exactly: "BLOCKING ISSUES FOUND:"
+- If only suggestions, start with: "RECOMMENDATIONS:"
+- Keep feedback concise and actionable
+- Reference specific file:line numbers where possible
+EOF
+then
+    REVIEW_SUCCESS=true
+else
+    REVIEW_SUCCESS=false
+fi
+
+# Display review output (with nice formatting)
+echo ""
+echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}📊 CODE REVIEW RESULTS${NC}"
+echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+echo ""
+cat "$REVIEW_OUTPUT"
+echo ""
+echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
+echo ""
+
+# Interactive prompt after review
+if grep -q "BLOCKING ISSUES FOUND:" "$REVIEW_OUTPUT"; then
+    echo ""
+    echo -e "${YELLOW}⚠️  Critical issues found${NC}"
+    echo -e "${YELLOW}⚠️  Review the issues above before proceeding${NC}"
+    echo ""
+    # Read from terminal to avoid issues with git's stdin redirection
+    read -p "Continue with push anyway? (y/N): " -n 1 -r < /dev/tty
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${RED}❌ Push aborted - fix issues and try again${NC}"
+        echo ""
+        echo -e "${YELLOW}💡 To bypass this check: git push --no-verify${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Proceeding with push despite issues...${NC}"
+elif grep -q "RECOMMENDATIONS:" "$REVIEW_OUTPUT"; then
+    echo -e "${GREEN}✅ No blocking issues - some suggestions provided above${NC}"
+else
+    echo -e "${GREEN}✅ Code review passed - no issues found!${NC}"
+fi
+
+echo ""
+echo -e "${GREEN}🚀 Proceeding with push...${NC}"
+exit 0

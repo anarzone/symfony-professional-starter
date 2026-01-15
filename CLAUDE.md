@@ -1,25 +1,19 @@
-# UptimeSentinel - Claude Code Guidelines
+# Symfony Professional Starter - Claude Code Guidelines
 
-This document defines the coding standards, architectural principles, and review criteria for the UptimeSentinel project. When reviewing code or implementing features, follow these guidelines to ensure consistency and quality.
+This document defines the coding standards, architectural principles, and review criteria for this Symfony project. When reviewing code or implementing features, follow these guidelines to ensure consistency and quality.
 
 ## Project Overview
 
-**UptimeSentinel** is a distributed uptime monitoring system engineered to handle **10,000+ concurrent checks per minute** using a hybrid architecture combining Domain-Driven Design (DDD) with high-performance data pipelines.
-
-### Architecture Style
-
-- **Distributed Modular Monolith**: Single repository deployed as distinct "Web" and "Worker" services
-- **Phase 1**: Local PHP + Docker infrastructure (current)
-- **Phase 2**: Full containerization with horizontal scaling (future)
+This is a **Symfony Professional Starter** template that provides best practices for building enterprise-grade Symfony applications with modern development workflows.
 
 ### Technology Stack
 
 - **Language**: PHP 8.4 (strict types, readonly properties)
-- **Framework**: Symfony 8 (Messenger component for queues)
-- **Database**: MySQL 8.0 with table partitioning for 10M+ rows/month
-- **Queue**: RabbitMQ (handling Thundering Herd problem)
-- **Cache/Buffer**: Redis (write buffering, API caching)
-- **CI/CD**: GitHub Actions with semantic release
+- **Framework**: Symfony 8
+- **Database**: MySQL 8.0 / PostgreSQL
+- **CI/CD**: GitHub Actions
+- **Code Quality**: PHP CS Fixer, PHPStan, PHPUnit
+- **Development Tools**: Docker, Composer, Husky
 
 ## Code Quality Standards
 
@@ -58,145 +52,105 @@ Focus on:
 
 ### Domain-Driven Design (DDD)
 
-The codebase is organized into **bounded contexts**:
+When applicable, organize the codebase into **bounded contexts** based on business domains. Each context should have:
 
-#### 1. Monitor Context (`src/Monitor/`)
-**Purpose**: Configuration and domain logic for monitoring
-- **DDD Structure**: Strict DDD with aggregates, entities, value objects
-- **Application Layer**: Command handlers (CreateMonitor, DisableMonitor)
-- **Domain Layer**: Business rules and invariants
-- **Infrastructure Layer**: Doctrine repositories
+- **Domain Layer**: Entities, value objects, aggregates, domain services
+- **Application Layer**: Command handlers, query handlers, use cases
+- **Infrastructure Layer**: Repository implementations, external service integrations
 
+**Example DDD Structure**:
 ```php
-// Example: Monitor entity with DDD patterns
-namespace App\Monitor\Domain\Entity;
+namespace App\User\Domain\Entity;
 
-use App\Monitor\Domain\ValueObject\MonitorId;
-use App\Monitor\Domain\ValueObject\Url;
+use App\User\Domain\ValueObject\UserId;
+use App\User\Domain\ValueObject\Email;
 
-final class Monitor
+final class User
 {
-    private readonly MonitorId $id;
-    private readonly Url $url;
+    private readonly UserId $id;
+    private readonly Email $email;
     private bool $isActive;
 
-    public function __construct(MonitorId $id, Url $url)
+    public function __construct(UserId $id, Email $email)
     {
         $this->id = $id;
-        $this->url = $url;
+        $this->email = $email;
         $this->isActive = true;
     }
 
-    public function disable(): void
+    public function deactivate(): void
     {
         if (!$this->isActive) {
-            throw new \DomainException('Monitor is already disabled');
+            throw new \DomainException('User is already inactive');
         }
         $this->isActive = false;
     }
 }
 ```
 
-#### 2. Telemetry Context (`src/Telemetry/`)
-**Purpose**: High-performance data ingestion and analytics
-- **Raw Data Pattern**: NO entities (DTOs only)
-- **Bulk Operations**: Raw SQL for performance
-- **Write Buffering**: Redis → MySQL bulk inserts
-
-```php
-// Example: DTO for telemetry data
-namespace App\Telemetry\Model;
-
-final class PingResultDto
-{
-    public function __construct(
-        public readonly string $monitorId,
-        public readonly int $statusCode,
-        public readonly int $latencyMs,
-        public readonly \DateTimeImmutable $checkedAt
-    ) {}
-}
-```
-
-#### 3. Shared Context (`src/Shared/`)
-**Purpose**: Cross-cutting concerns
-- Value objects (UuidV7, Email, etc.)
-- Shared kernel utilities
-- Common interfaces
-
 ### Key Architectural Patterns
 
-#### 1. Thundering Herd Solution (Scheduler)
-**Problem**: 10K URL checks every 60s via loop = timeouts
-**Solution**: Dispatcher → RabbitMQ → Workers pattern
+#### 1. Service Layer Pattern
+Separate business logic from controllers:
 
 ```php
-// Dispatcher (runs every minute via cron)
-class MonitorDispatcher
+// Service class
+class UserService
 {
-    public function dispatchDueMonitors(): void
+    public function __construct(
+        private UserRepository $repository,
+        private EventDispatcherInterface $dispatcher
+    ) {}
+
+    public function createUser(CreateUserCommand $command): User
     {
-        $monitors = $this->repository->findDueMonitors();
-        foreach ($monitors as $monitor) {
-            $this->bus->dispatch(new MonitorJob($monitor->getId()));
-        }
-    }
-}
-
-// Worker (consumes from RabbitMQ)
-class MonitorJobHandler implements MessageHandlerInterface
-{
-    public function __invoke(MonitorJob $job): void
-    {
-        $result = $this->urlChecker->check($job->getMonitorId());
-        $this->redis->lpush('telemetry_buffer', json_encode($result));
-    }
-}
-```
-
-#### 2. Write Buffering (High-Throughput Ingestion)
-**Problem**: 10K DB transactions/min kills database
-**Solution**: Workers → Redis → Bulk Ingestor → MySQL
-
-```php
-// Worker pushes to Redis buffer
-$this->redis->lpush('telemetry_buffer', json_encode($result));
-
-// Ingestor pops and bulk inserts
-class TelemetryIngestor
-{
-    public function ingest(): void
-    {
-        $batch = [];
-        for ($i = 0; $i < 1000; $i++) {
-            $item = $this->redis->rpop('telemetry_buffer');
-            if (!$item) break;
-            $batch[] = json_decode($item, true);
-        }
-
-        $this->connection->executeStatement(
-            'INSERT INTO telemetry (...) VALUES ' . implode(',', array_fill(0, count($batch), '(?,?,?)')),
-            array_merge(...array_map(fn($r) => [$r['id'], $r['status'], $r['latency']], $batch))
+        $user = new User(
+            UserId::generate(),
+            new Email($command->email)
         );
+
+        $this->repository->save($user);
+        $this->dispatcher->dispatch(new UserCreatedEvent($user->getId()));
+
+        return $user;
     }
 }
 ```
 
-#### 3. Table Partitioning (Big Data Analytics)
-**Problem**: 30-day latency scan over 40M rows = slow
-**Solution**: MySQL range partitioning + covering indexes
+#### 2. Repository Pattern
+Abstract data access logic:
 
-```sql
--- Partition by created_at
-ALTER TABLE telemetry PARTITION BY RANGE (UNIX_TIMESTAMP(created_at)) (
-    PARTITION p202601 VALUES LESS THAN (UNIX_TIMESTAMP('2026-02-01')),
-    PARTITION p202602 VALUES LESS THAN (UNIX_TIMESTAMP('2026-03-01')),
-    PARTITION p_future VALUES LESS THAN MAXVALUE
-);
-
--- Covering index for analytical queries
-CREATE INDEX idx_telemetry_monitor_latency ON telemetry (monitor_id, latency, created_at);
+```php
+interface UserRepositoryInterface
+{
+    public function save(User $user): void;
+    public function findById(UserId $id): ?User;
+    public function findByEmail(Email $email): ?User;
+}
 ```
+
+#### 3. Event-Driven Architecture
+Use Symfony Messenger for async processing:
+
+```php
+// Message handler
+class SendWelcomeEmailHandler implements MessageHandlerInterface
+{
+    public function __invoke(SendWelcomeEmail $message): void
+    {
+        $user = $this->userRepository->find($message->getUserId());
+        $this->mailer->sendWelcomeEmail($user);
+    }
+}
+```
+
+### Performance Optimization
+
+1. **Avoid N+1 Queries**: Use Doctrine batching or DQL
+2. **Use Covering Indexes**: Index all columns needed for queries
+3. **Cache Aggressively**: Use Symfony Cache for read-heavy operations
+4. **Bulk Operations**: Batch inserts/updates when possible
+5. **Lazy Loading**: Configure Doctrine lazy associations appropriately
 
 ## Security Best Practices
 
@@ -225,25 +179,25 @@ CREATE INDEX idx_telemetry_monitor_latency ON telemetry (monitor_id, latency, cr
 
 ### Performance Targets
 
-- **URL Check**: < 100ms p50, < 500ms p95
-- **API Response**: < 200ms p50, < 1s p95
-- **Throughput**: 10,000 checks/min per worker instance
+Set appropriate targets based on your application requirements:
+- **API Response**: < 200ms p50, < 1s p95 (typical web apps)
+- **Database Queries**: < 100ms for single queries
+- **Background Jobs**: Process within SLA requirements
 
 ### Optimization Guidelines
 
 1. **Avoid N+1 Queries**: Use Doctrine batching or DQL
 2. **Use Covering Indexes**: Index all columns needed for queries
-3. **Cache Aggressively**: Redis for read-heavy operations
-4. **Bulk Operations**: Batch inserts/updates (1000 items/transaction)
-5. **Lazy Loading**: Doctrine lazy associations, fetch joins when needed
-6. **OPcache**: Enable in production for Phase 2
+3. **Cache Aggressively**: Use Symfony Cache for read-heavy operations
+4. **Bulk Operations**: Batch inserts/updates when appropriate
+5. **Lazy Loading**: Configure Doctrine lazy associations appropriately
 
 ### Performance Review Checklist
 
 - [ ] No N+1 query problems
 - [ ] Appropriate indexes exist
-- [ ] Caching strategy defined
-- [ ] Bulk operations for high-volume writes
+- [ ] Caching strategy defined where needed
+- [ ] Database queries analyzed and optimized
 - [ ] Query execution time analyzed
 - [ ] Memory usage profiled
 
