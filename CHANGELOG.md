@@ -1,3 +1,14 @@
+## [1.2.0](https://github.com/anarzone/symfony-professional-starter/compare/v1.1.0...v1.2.0) (2026-01-15)
+
+### Features
+
+* Add interactive code review system ([6ecc669](https://github.com/anarzone/symfony-professional-starter/commit/6ecc669c9d96c57bb5a851c0ebe06f82b07f950e))
+
+### Bug Fixes
+
+* Disable remote code review and fix CI workflow ([ada36da](https://github.com/anarzone/symfony-professional-starter/commit/ada36dac14fb9071c4927eab5ae3be7c2da1956e))
+* Remove all triggers from disabled code-review workflow ([5408373](https://github.com/anarzone/symfony-professional-starter/commit/5408373606210047337129631bd7b3e3b11b3562))
+
 ## [1.1.0](https://github.com/anarzone/symfony-professional-starter/compare/v1.0.0...v1.1.0) (2026-01-14)
 
 ### Features
