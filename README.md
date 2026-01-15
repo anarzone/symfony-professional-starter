@@ -1,43 +1,237 @@
-# 📡 UptimeSentinel
+# Symfony Professional Starter
 
-**UptimeSentinel** is a distributed system for monitoring service availability at scale. It is engineered to handle **10,000+ concurrent checks per minute** using a hybrid architecture that combines Domain-Driven Design (DDD) for configuration with raw, high-performance data pipelines for telemetry.
+A professional Symfony 8 template with best practices for building enterprise-grade applications. Features modern development workflows, automated code quality checks, and interactive code review.
 
-> **Project Goal:** This is a "System Design Gym" implementation focused on solving real-world scalability problems like the Thundering Herd effect, massive table growth, and high-concurrency write buffering.
+## ✨ Features
 
-## 🏗 Architecture Highlights
+- **Symfony 8** with PHP 8.4
+- **Strict Type Safety** - `declare(strict_types=1)` enforced everywhere
+- **Automated Quality Checks**:
+  - PHP CS Fixer with `@Symfony` and `@Symfony:risky` rules
+  - PHPStan at Level 5
+  - PHPUnit for testing
+- **Git Hooks** (via Husky):
+  - Pre-commit: Automated style and static analysis checks
+  - Pre-push: Interactive code review with Claude CLI
+- **Docker Support** - Containerized infrastructure services
+- **Semantic Release** - Automated versioning and changelog generation
 
-| Component | Technology | Role |
-| :--- | :--- | :--- |
-| **Core Framework** | Symfony 7 (PHP 8.3) | Modular Monolith architecture |
-| **Orchestration** | Docker Compose | Service isolation (Web vs. Worker) |
-| **Queue Broker** | RabbitMQ | Handling the "Thundering Herd" of scheduled checks |
-| **Database** | MySQL 8.0 | Using **Table Partitioning** for 10M+ log rows/month |
-| **Write Buffer** | Redis | Buffering high-velocity writes before disk persistence |
-
-## 🚀 Key Engineering Challenges Solved
-
-### 1. The "Thundering Herd" Scheduler
-Instead of a naive `foreach` loop that times out, a **Dispatcher** runs every minute to push lightweight Job IDs to RabbitMQ. Distributed **Workers** consume these jobs at their own pace, preventing system overload during peak check times.
-
-### 2. High-Throughput Ingestion
-Writing 10,000 logs/minute kills standard database connections. We implement a **Bulk Ingestion Pipeline** where workers push results to a Redis List, and a dedicated **Ingestor Service** performs single-transaction bulk inserts into MySQL.
-
-### 3. Big Data Analytics
-To query "Average Latency over 30 days" across millions of rows, we utilize **MySQL Range Partitioning** and **Covering Indexes**, turning slow analytical queries into sub-second operations.
-
-## 🛠 Installation (Hybrid Mode)
+## 🚀 Quick Start
 
 **Prerequisites:**
-* PHP 8.3+
-* Composer
-* Docker (for Infrastructure only)
+- PHP 8.4+
+- Composer
+- Docker (optional, for infrastructure)
+- Claude CLI (for code reviews)
 
 ```bash
-# 1. Clone the repo
-git clone [https://github.com/anarzone/uptime-sentinel.git](https://github.com/anarzone/uptime-sentinel.git)
+# 1. Clone the repository
+git clone https://github.com/anarzone/symfony-professional-starter.git
+cd symfony-professional-starter
 
-# 2. Start Infrastructure (MySQL, RabbitMQ, Redis)
+# 2. Install dependencies
+composer install
+
+# 3. Configure environment
+cp .env .env.local
+# Edit .env.local with your settings
+
+# 4. Run database migrations
+php bin/console doctrine:migrations:migrate
+
+# 5. Start the development server
+symfony server:start
+```
+
+## 📋 Available Commands
+
+### Quality Checks
+
+```bash
+# Run all quality checks
+composer check-all
+
+# Run individual checks
+composer check-style      # PHP CS Fixer
+composer analyze         # PHPStan Level 5
+composer test            # PHPUnit
+
+# Auto-fix code style
+composer format
+```
+
+### Development
+
+```bash
+# Database migrations
+php bin/console doctrine:migrations:migrate
+
+# Create a new migration
+php bin/console doctrine:migrations:diff
+
+# Cache management
+php bin/console cache:clear
+```
+
+## 🔍 Code Review System
+
+This project includes an **interactive pre-push code review** system that runs automatically before every push.
+
+### How It Works
+
+1. Make your changes and commit them
+2. Run `git push`
+3. The pre-push hook automatically reviews your changes
+4. If critical issues are found, you'll be prompted:
+   ```
+   Continue with push anyway? (y/N):
+   ```
+5. Choose to fix issues or proceed with push
+
+### Configuration
+
+Edit `.husky/pre-push-config.yml`:
+
+```yaml
+# Enable/disable automatic code review
+auto_review: true
+
+# Interactive mode: ask before proceeding with issues
+interactive: true
+
+# Maximum files to review per push
+max_files: 20
+```
+
+### Manual Review
+
+For deeper analysis, use the manual review script:
+
+```bash
+./scripts/review-pr.sh <PR_NUMBER>
+```
+
+See [CODE_REVIEW_WORKFLOW.md](CODE_REVIEW_WORKFLOW.md) for complete documentation.
+
+## 🏗 Project Structure
+
+```
+.
+├── bin/                    # Console scripts
+├── config/                 # Symfony configuration
+├── migrations/             # Database migrations
+├── public/                 # Public entry point
+├── src/                    # Application source code
+│   ├── Controller/         # HTTP controllers
+│   ├── Entity/             # Doctrine entities
+│   ├── Repository/         # Data access layer
+│   ├── Service/            # Business logic
+│   └── ...                 # Other domain code
+├── templates/              # Twig templates
+├── tests/                  # PHPUnit tests
+├── .husky/                 # Git hooks
+│   ├── pre-commit          # Runs before commit
+│   ├── pre-push            # Runs code review before push
+│   └── pre-push-config.yml # Code review configuration
+├── CLAUDE.md               # Coding standards & review criteria
+└── CODE_REVIEW_WORKFLOW.md # Code review documentation
+```
+
+## 📚 Coding Standards
+
+This project follows strict coding standards defined in [CLAUDE.md](CLAUDE.md):
+
+- **PHP 8.4** with strict types enabled
+- **PSR-12** coding standard (via PHP CS Fixer)
+- **Type safety** via PHPStan Level 5
+- **SOLID principles** and clean architecture patterns
+- **Comprehensive testing** with PHPUnit
+
+## 🐳 Docker Support
+
+Docker is configured for infrastructure services:
+
+```bash
+# Start infrastructure services
 docker compose up -d
 
-# 3. Start the Application
-symfony server:start
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+```
+
+## 🔄 Git Workflow
+
+### Branch Strategy
+
+- `main` - Production branch
+- `feat/*` - Feature branches
+- `fix/*` - Bugfix branches
+- `docs/*` - Documentation updates
+
+### Commit Convention
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/):
+
+```bash
+feat: add user registration
+fix: resolve login issue
+docs: update README
+refactor: simplify user service
+test: add unit tests for user entity
+```
+
+### Pre-Commit Hook
+
+Runs automatically before each commit:
+- ✅ PHP CS Fixer (code style)
+- ✅ PHPStan (static analysis)
+- ✅ PHPUnit (tests)
+
+Bypass if needed:
+```bash
+git commit --no-verify
+```
+
+### Pre-Push Hook (Code Review)
+
+Runs automatically before each push:
+- 🤖 Claude CLI code review
+- 🤔 Interactive prompt for critical issues
+- ⚡ Fast local feedback
+
+Bypass if needed:
+```bash
+git push --no-verify
+```
+
+## 📖 Documentation
+
+- **[CLAUDE.md](CLAUDE.md)** - Coding standards and architectural guidelines
+- **[CODE_REVIEW_WORKFLOW.md](CODE_REVIEW_WORKFLOW.md)** - Code review system documentation
+- **[README.md](README.md)** - This file
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/amazing-feature`)
+3. Make your changes
+4. Commit with conventional commit message
+5. Push and create a Pull Request
+
+The pre-push code review will automatically check your changes!
+
+## 📄 License
+
+This project is open-sourced software licensed under the [MIT license](LICENSE).
+
+## 🔗 Resources
+
+- [Symfony Documentation](https://symfony.com/doc)
+- [PHP CS Fixer](https://cs.symfony.com)
+- [PHPStan](https://phpstan.org)
+- [PHPUnit](https://phpunit.de)
+- [Docker](https://www.docker.com)
+- [Claude Code CLI](https://code.claude.com)

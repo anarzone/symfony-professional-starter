@@ -1,4 +1,4 @@
-name: FastReserve CI
+name: Symfony Professional Starter CI
 
 on:
     push:
@@ -46,7 +46,7 @@ jobs:
                 image: mysql:8.0
                 env:
                     MYSQL_ROOT_PASSWORD: root
-                    MYSQL_DATABASE: fast_reserve_test
+                    MYSQL_DATABASE: symfony_starter_test
                 ports:
                     - 3306:3306
                 options: >-
@@ -70,13 +70,13 @@ jobs:
 
             -   name: Create Database Schema
                 env:
-                    DATABASE_URL: mysql://root:root@127.0.0.1:3306/fast_reserve
+                    DATABASE_URL: mysql://root:root@127.0.0.1:3306/symfony_starter
                 run: |
                     php bin/console doctrine:schema:create --env=test
 
             -   name: Run  Tests
                 env:
-                    DATABASE_URL: mysql://root:root@127.0.0.1:3306/fast_reserve
+                    DATABASE_URL: mysql://root:root@127.0.0.1:3306/symfony_starter
                 run: vendor/bin/phpunit
 
     release:
