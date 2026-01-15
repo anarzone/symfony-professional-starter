@@ -1,32 +1,30 @@
-name: Claude Code Review (DISABLED)
-
-# This workflow is DISABLED
+# This workflow has been DISABLED
 # We now use local pre-push code review via .husky/pre-push hook
-# See CODE_REVIEW_WORKFLOW.md for details
+# See CODE_REVIEW_WORKFLOW.md for details on the local review system
 
-on:
-  # Trigger on PR comments mentioning @claude
-  issue_comment:
-    types: [created]
-  pull_request_review_comment:
-    types: [created]
+# To re-enable remote code reviews (not recommended):
+# 1. Uncomment the 'on:' section below
+# 2. Remove the 'if: false' from the job
+# 3. Set ANTHROPIC_API_KEY in repository secrets
+# 4. Configure the job steps as needed
 
-  # Automatic review on PR events
-  pull_request:
-    types: [opened, synchronize]
+# on:
+#   workflow_dispatch:  # Only allow manual trigger if re-enabled
 
-  # Manual trigger from GitHub Actions UI
-  workflow_dispatch:
-
-# This workflow is disabled - we use local pre-push reviews instead
-# To re-enable, remove the 'if: false' condition below
 jobs:
   disabled:
-    if: false
+    if: false  # Always disabled - we use local pre-push reviews
     runs-on: ubuntu-latest
     steps:
       - name: Workflow Disabled
         run: |
           echo "This workflow has been disabled."
-          echo "We now use local pre-push code review via .husky/pre-push hook"
+          echo ""
+          echo "We now use local pre-push code review via .husky/pre-push hook."
+          echo "This provides:"
+          echo "  - Faster feedback (3-5 seconds vs 60+ seconds)"
+          echo "  - No API costs"
+          echo "  - Interactive control over whether to fix or proceed"
+          echo "  - Works offline"
+          echo ""
           echo "See CODE_REVIEW_WORKFLOW.md for more details."
